@@ -20,7 +20,7 @@ sys.path.append(ROOT_DIR)
 
 from efficientvit.apps.utils import AverageMeter
 from efficientvit.models.utils import resize
-from efficientvit.seg_model_zoo import create_efficientvit_seg_model
+from efficientvit.seg_model_zoo import create_efficientvit_seg_experiment_model
 
 
 class Resize(object):
@@ -631,6 +631,9 @@ def main():
     parser.add_argument("--model", type=str)
     parser.add_argument("--weight_url", type=str, default=None)
     parser.add_argument("--save_path", type=str, default=None)
+    parser.add_argument("--experiment", choices=["e0", "e1", "e2", "e3"], default="e0")
+    parser.add_argument("--mhla_num_groups", type=int, default=4)
+    parser.add_argument("--no_pretrained", action="store_true")
 
     args = parser.parse_args()
     if args.gpu == "all":
@@ -658,7 +661,13 @@ def main():
         drop_last=False,
     )
 
-    model = create_efficientvit_seg_model(args.model, weight_url=args.weight_url)
+    model = create_efficientvit_seg_experiment_model(
+        name=args.model,
+        experiment=args.experiment,
+        mhla_num_groups=args.mhla_num_groups,
+        pretrained=not args.no_pretrained,
+        weight_url=args.weight_url,
+    )
     model = torch.nn.DataParallel(model).cuda()
     model.eval()
 
@@ -699,7 +708,10 @@ def main():
                             canvas.save(os.path.join(args.save_path, f"{idx}.png"))
                             fout.write(f"{idx}:\t{image_path}\n")
 
-    print(f"mIoU = {(interaction.sum / union.sum).cpu().mean().item() * 100:.3f}")
+    class_iou = (interaction.sum / union.sum).cpu() * 100
+    print(f"mIoU = {class_iou.mean().item():.3f}")
+    for class_name, score in zip(dataset.classes, class_iou.tolist()):
+        print(f"{class_name}: {score:.3f}")
 
 
 if __name__ == "__main__":

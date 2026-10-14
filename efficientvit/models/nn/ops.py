@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from efficientvit.models.nn.act import build_act
+from efficientvit.models.nn.mhla import MultiHeadLinearAttention
 from efficientvit.models.nn.norm import build_norm
 from efficientvit.models.utils import get_same_padding, list_sum, resize, val2list, val2tuple
 
@@ -531,9 +532,16 @@ class LiteMLA(nn.Module):
         kernel_func="relu",
         scales: tuple[int, ...] = (5,),
         eps=1.0e-15,
+        attention_type: str = "lite_mla",
+        use_multiscale_qkv: bool = True,
+        mhla_num_groups: int = 4,
     ):
         super(LiteMLA, self).__init__()
+        if attention_type not in {"lite_mla", "mhla"}:
+            raise ValueError(f"Unsupported attention_type={attention_type!r}; expected 'lite_mla' or 'mhla'")
         self.eps = eps
+        self.attention_type = attention_type
+        self.use_multiscale_qkv = use_multiscale_qkv
         heads = int(in_channels // dim * heads_ratio) if heads is None else heads
 
         total_dim = heads * dim
@@ -551,6 +559,7 @@ class LiteMLA(nn.Module):
             norm=norm[0],
             act_func=act_func[0],
         )
+        active_scales = scales if use_multiscale_qkv else ()
         self.aggreg = nn.ModuleList(
             [
                 nn.Sequential(
@@ -564,13 +573,14 @@ class LiteMLA(nn.Module):
                     ),
                     nn.Conv2d(3 * total_dim, 3 * total_dim, 1, groups=3 * heads, bias=use_bias[0]),
                 )
-                for scale in scales
+                for scale in active_scales
             ]
         )
         self.kernel_func = build_act(kernel_func, inplace=False)
+        self.mhla = MultiHeadLinearAttention(mhla_num_groups, eps=eps) if attention_type == "mhla" else None
 
         self.proj = ConvLayer(
-            total_dim * (1 + len(scales)),
+            total_dim * (1 + len(active_scales)),
             out_channels,
             1,
             use_bias=use_bias[1],
@@ -618,6 +628,24 @@ class LiteMLA(nn.Module):
         return out
 
     @torch.autocast(device_type="cuda", enabled=False)
+    def mhla_att(self, qkv: torch.Tensor) -> torch.Tensor:
+        """Apply token-grouped MHLA to EfficientViT's projected Q/K/V."""
+        B, _, H, W = qkv.shape
+        original_dtype = qkv.dtype
+        if original_dtype == torch.float16:
+            qkv = qkv.float()
+        qkv = qkv.reshape(B, -1, 3 * self.dim, H, W)
+        q, k, v = (
+            qkv[:, :, 0 : self.dim],
+            qkv[:, :, self.dim : 2 * self.dim],
+            qkv[:, :, 2 * self.dim :],
+        )
+        q = self.kernel_func(q)
+        k = self.kernel_func(k)
+        out = self.mhla(q, k, v)
+        return out.reshape(B, -1, H, W).to(original_dtype)
+
+    @torch.autocast(device_type="cuda", enabled=False)
     def relu_quadratic_att(self, qkv: torch.Tensor) -> torch.Tensor:
         B, _, H, W = list(qkv.size())
 
@@ -659,7 +687,9 @@ class LiteMLA(nn.Module):
         qkv = torch.cat(multi_scale_qkv, dim=1)
 
         H, W = list(qkv.size())[-2:]
-        if H * W > self.dim:
+        if self.attention_type == "mhla":
+            out = self.mhla_att(qkv)
+        elif H * W > self.dim:
             out = self.relu_linear_att(qkv).to(qkv.dtype)
         else:
             out = self.relu_quadratic_att(qkv)
@@ -680,6 +710,9 @@ class EfficientViTBlock(nn.Module):
         act_func: str = "hswish",
         context_module: str = "LiteMLA",
         local_module: str = "MBConv",
+        attention_type: str = "lite_mla",
+        use_multiscale_qkv: bool = True,
+        mhla_num_groups: int = 4,
     ):
         super(EfficientViTBlock, self).__init__()
         if context_module == "LiteMLA":
@@ -691,6 +724,9 @@ class EfficientViTBlock(nn.Module):
                     dim=dim,
                     norm=(None, norm),
                     scales=scales,
+                    attention_type=attention_type,
+                    use_multiscale_qkv=use_multiscale_qkv,
+                    mhla_num_groups=mhla_num_groups,
                 ),
                 IdentityLayer(),
             )

@@ -1,0 +1,4 @@
+experiment: e1
+attention_type: lite_mla
+use_multiscale_qkv: false
+mhla_num_groups: 4

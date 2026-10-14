@@ -1,5 +1,8 @@
 # EfficientViT Segmentation
 
+The controlled EfficientViT + MHLA E0--E3 extension is documented in
+[MHLA_EXPERIMENTS.md](../../MHLA_EXPERIMENTS.md).
+
 ![demo](../../assets/cityscapes_l1.gif)
 
 <p align="left">

@@ -1,0 +1,63 @@
+{
+  "model": "efficientvit-seg-b1-cityscapes",
+  "input_shape": [
+    1,
+    3,
+    1024,
+    2048
+  ],
+  "mhla_num_groups": 4,
+  "device": "cuda",
+  "torch_version": "2.5.1+cu121",
+  "python_version": "3.11.14",
+  "git_commit": "de7d7733cc0329f391b33f1f459271562ec27bd5",
+  "git_dirty": true,
+  "seed": 0,
+  "gpu": "NVIDIA GeForce RTX 3050 Laptop GPU",
+  "results": [
+    {
+      "experiment": "E0",
+      "parameters": 4803443,
+      "trainable_parameters": 4803443,
+      "macs": 25354698759,
+      "flops_2_per_mac": 50709397518,
+      "macs_notes": "No handlers found: \"aten::hardswish\". Skipped.; No handlers found: \"aten::pad\". Skipped.; No handlers found: \"aten::upsample_bicubic2d\". Skipped.",
+      "latency_ms": 70.05194091796875,
+      "fps": 14.27512195801978,
+      "peak_gpu_memory_bytes": 354993152
+    },
+    {
+      "experiment": "E1",
+      "parameters": 4318963,
+      "trainable_parameters": 4318963,
+      "macs": 23592042503,
+      "flops_2_per_mac": 47184085006,
+      "macs_notes": "No handlers found: \"aten::hardswish\". Skipped.; No handlers found: \"aten::pad\". Skipped.; No handlers found: \"aten::upsample_bicubic2d\". Skipped.",
+      "latency_ms": 56.82432250976562,
+      "fps": 17.598098064928863,
+      "peak_gpu_memory_bytes": 353055232
+    },
+    {
+      "experiment": "E2",
+      "parameters": 4319075,
+      "trainable_parameters": 4319075,
+      "macs": 23587182599,
+      "flops_2_per_mac": 47174365198,
+      "macs_notes": "No handlers found: \"aten::hardswish\". Skipped.; No handlers found: \"aten::upsample_bicubic2d\". Skipped.",
+      "latency_ms": 57.373785400390624,
+      "fps": 17.429562874775762,
+      "peak_gpu_memory_bytes": 353058816
+    },
+    {
+      "experiment": "E3",
+      "parameters": 4803555,
+      "trainable_parameters": 4803555,
+      "macs": 25344978951,
+      "flops_2_per_mac": 50689957902,
+      "macs_notes": "No handlers found: \"aten::hardswish\". Skipped.; No handlers found: \"aten::upsample_bicubic2d\". Skipped.",
+      "latency_ms": 70.01835327148437,
+      "fps": 14.281969701896136,
+      "peak_gpu_memory_bytes": 354996736
+    }
+  ]
+}

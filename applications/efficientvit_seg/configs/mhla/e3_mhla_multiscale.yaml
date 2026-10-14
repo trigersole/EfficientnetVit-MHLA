@@ -1,0 +1,4 @@
+experiment: e3
+attention_type: mhla
+use_multiscale_qkv: true
+mhla_num_groups: 4

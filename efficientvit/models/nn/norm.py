@@ -4,7 +4,16 @@ import torch
 import torch.nn as nn
 from torch.nn.modules.batchnorm import _BatchNorm
 
-from efficientvit.models.nn.triton_rms_norm import TritonRMSNorm2dFunc
+try:
+    from efficientvit.models.nn.triton_rms_norm import TritonRMSNorm2dFunc
+except ImportError:
+    class TritonRMSNorm2dFunc:
+        """Portable fallback used when Triton is unavailable (for example on Windows)."""
+
+        @staticmethod
+        def apply(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor, eps: float) -> torch.Tensor:
+            out = x * torch.rsqrt(torch.square(x).mean(dim=1, keepdim=True) + eps)
+            return out * weight.view(1, -1, 1, 1) + bias.view(1, -1, 1, 1)
 from efficientvit.models.utils import build_kwargs_from_config
 
 __all__ = ["LayerNorm2d", "TritonRMSNorm2d", "build_norm", "reset_bn", "set_norm_eps"]

@@ -40,6 +40,9 @@ class EfficientViTBackbone(nn.Module):
         expand_ratio=4,
         norm="bn2d",
         act_func="hswish",
+        attention_type: str = "lite_mla",
+        use_multiscale_qkv: bool = True,
+        mhla_num_groups: int = 4,
     ) -> None:
         super().__init__()
 
@@ -110,6 +113,9 @@ class EfficientViTBackbone(nn.Module):
                         expand_ratio=expand_ratio,
                         norm=norm,
                         act_func=act_func,
+                        attention_type=attention_type,
+                        use_multiscale_qkv=use_multiscale_qkv,
+                        mhla_num_groups=mhla_num_groups,
                     )
                 )
             self.stages.append(OpSequential(stage))
@@ -208,6 +214,9 @@ class EfficientViTLargeBackbone(nn.Module):
         qkv_dim=32,
         norm="bn2d",
         act_func="gelu",
+        attention_type: str = "lite_mla",
+        use_multiscale_qkv: bool = True,
+        mhla_num_groups: int = 4,
     ) -> None:
         super().__init__()
         block_list = ["res", "fmb", "fmb", "mb", "att"] if block_list is None else block_list
@@ -267,6 +276,9 @@ class EfficientViTLargeBackbone(nn.Module):
                             scales=(3,) if block_list[stage_id] == "att@3" else (5,),
                             norm=norm,
                             act_func=act_func,
+                            attention_type=attention_type,
+                            use_multiscale_qkv=use_multiscale_qkv,
+                            mhla_num_groups=mhla_num_groups,
                         )
                     )
                 else:

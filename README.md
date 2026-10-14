@@ -1,5 +1,9 @@
 # Efficient Vision Foundation Models for High-Resolution Generation and Perception
 
+> This working branch includes a controlled EfficientViT + MHLA semantic
+> segmentation experiment. See [MHLA_EXPERIMENTS.md](MHLA_EXPERIMENTS.md) for
+> architecture details, tests, profiling, evaluation, and the E0--E3 protocol.
+
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/deep-compression-autoencoder-for-efficient/image-generation-on-imagenet-512x512)](https://paperswithcode.com/sota/image-generation-on-imagenet-512x512?p=deep-compression-autoencoder-for-efficient)
 
 ## News

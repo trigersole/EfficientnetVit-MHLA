@@ -1,0 +1,5 @@
+experiment,parameters,trainable_parameters,macs,flops_2_per_mac,macs_notes,latency_ms,fps,peak_gpu_memory_bytes
+E0,4803443,4803443,25354698759,50709397518,"No handlers found: ""aten::hardswish"". Skipped.; No handlers found: ""aten::pad"". Skipped.; No handlers found: ""aten::upsample_bicubic2d"". Skipped.",70.05194091796875,14.27512195801978,354993152
+E1,4318963,4318963,23592042503,47184085006,"No handlers found: ""aten::hardswish"". Skipped.; No handlers found: ""aten::pad"". Skipped.; No handlers found: ""aten::upsample_bicubic2d"". Skipped.",56.82432250976562,17.598098064928863,353055232
+E2,4319075,4319075,23587182599,47174365198,"No handlers found: ""aten::hardswish"". Skipped.; No handlers found: ""aten::upsample_bicubic2d"". Skipped.",57.373785400390624,17.429562874775762,353058816
+E3,4803555,4803555,25344978951,50689957902,"No handlers found: ""aten::hardswish"". Skipped.; No handlers found: ""aten::upsample_bicubic2d"". Skipped.",70.01835327148437,14.281969701896136,354996736
