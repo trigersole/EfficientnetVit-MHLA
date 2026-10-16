@@ -165,6 +165,11 @@ interpreting E1--E3. Log the resolved configuration, git commit, seed, compatibl
 checkpoint-load report, loss, validation mIoU, per-class IoU, best epoch,
 parameters, MAC estimate, latency, FPS, peak memory, and checkpoint path.
 
+For a 32-GPU SLURM cluster with a six-hour job limit, use the parallel launcher
+in [`scripts/slurm/README.md`](scripts/slurm/README.md). It provides flags for
+choosing E0--E3, MHLA group ablations, training, evaluation, and benchmarking,
+and gives each of four simultaneous experiments eight GPUs by default.
+
 ## Evaluation
 
 After training, evaluate each checkpoint with the original evaluator plus the

@@ -10,6 +10,7 @@ __pycache__/
 
 wandb/
 tmp/
+slurm_runs/
 
 assets/checkpoints/
 assets/data/
