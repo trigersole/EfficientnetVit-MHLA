@@ -69,9 +69,48 @@ parameters, estimated MACs/FLOPs, latency, FPS, and peak GPU memory.
 
 ## Train and then evaluate
 
-The official EfficientViT repository does not contain its segmentation
-trainer. Therefore the launcher accepts your existing/course trainer as a
-command rather than silently replacing the paper's training protocol.
+This branch includes a lightweight, transparent trainer because the official
+EfficientViT release does not include its segmentation training recipe. It is
+intended for a controlled E0--E3 comparison, not as a claim that the paper's
+unreleased training setup has been reproduced.
+
+The built-in trainer uses random scale/crop/flip augmentation, cross-entropy,
+AdamW, linear warmup plus cosine decay, mixed precision, DDP, periodic mIoU,
+and resumable checkpoints. Every selected experiment receives the same
+settings. `best.pt` is evaluator-compatible; `last.pt` contains the complete
+resume state.
+
+Run all four variants concurrently, eight GPUs per variant:
+
+```bash
+sbatch scripts/slurm/run_mhla_experiments.sbatch \
+  --mode train-eval-benchmark \
+  --experiments e0,e1,e2,e3 \
+  --groups 4 \
+  --train-data /datasets/cityscapes \
+  --eval-path /datasets/cityscapes/leftImg8bit/val \
+  --init-checkpoint /checkpoints/efficientvit_b1_r224.pt \
+  --output-root /scratch/$USER/effvit-mhla \
+  --max-steps 12000
+```
+
+`--init-checkpoint` is optional. For a fair test, use the same compatible
+classification/backbone initialization for every variant, or omit it for all
+variants. The trainer writes an initialization report showing exactly which
+tensors were loaded. If your six-hour allocation ends early, submit the same
+command and output root again; `--resume` is enabled automatically.
+
+Useful compute controls are `--max-steps`, `--train-batch-size`,
+`--grad-accum-steps`, `--train-crop-height`, `--train-crop-width`,
+`--eval-interval`, and `--val-max-samples`. Defaults are deliberately modest:
+12,000 steps, batch 2 per GPU, 512x1024 crops, and a 500-image validation
+subset. Use `--max-steps 100 --train-crop-height 256 --train-crop-width 512`
+for a pipeline smoke test before spending the full allocation.
+
+### Optional custom trainer
+
+`--train-command` overrides the built-in trainer. The command receives these
+environment variables for each selected run:
 
 The command receives these environment variables for each selected run:
 
@@ -87,7 +126,7 @@ MHLA_CHECKPOINT_PATH        resolved checkpoint target
 MHLA_GPUS_PER_EXPERIMENT    normally 8
 ```
 
-Example for a trainer that accepts the project's model flags:
+Example custom command:
 
 ```bash
 sbatch scripts/slurm/run_mhla_experiments.sbatch \
@@ -108,7 +147,7 @@ sbatch scripts/slurm/run_mhla_experiments.sbatch \
     --resume'
 ```
 
-The trainer must periodically save `{run_dir}/best.pt` (or the path supplied
+The custom trainer must periodically save `{run_dir}/best.pt` (or the path supplied
 with `--checkpoint-template`). Because jobs are limited to six hours, its
 `--resume` behavior and periodic checkpoints should be enabled. The job receives
 `USR1` five minutes before termination and stops active `srun` steps cleanly.

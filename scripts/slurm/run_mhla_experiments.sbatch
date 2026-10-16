@@ -32,9 +32,19 @@ Model/data options:
   --output-root PATH          Root directory for checkpoints/logs/results
   --checkpoint-template PATH  Supports {run_dir}, {run_name}, {experiment}, {groups}
 
-Training option:
-  --train-command COMMAND     Existing trainer command executed once per run.
-                              It receives the MHLA_* environment variables.
+Training options:
+  --init-checkpoint PATH      Optional common initialization checkpoint
+  --max-steps N               Optimizer steps (default: 12000)
+  --train-batch-size N        Per-GPU training batch (default: 2)
+  --grad-accum-steps N        Gradient accumulation (default: 1)
+  --train-crop-height N       Training/validation height (default: 512)
+  --train-crop-width N        Training/validation width (default: 1024)
+  --lr VALUE                  AdamW base learning rate (default: 0.0006)
+  --warmup-steps N            Linear warmup steps (default: 500)
+  --save-interval N           Resume checkpoint interval (default: 500)
+  --eval-interval N           Lightweight validation interval (default: 1000)
+  --val-max-samples N         Validation subset; 0 means all (default: 500)
+  --train-command COMMAND     Optional custom trainer override
 
 Benchmark/evaluation options:
   --input-height N
@@ -66,6 +76,17 @@ CROP_SIZE=1024
 OUTPUT_ROOT=""
 CHECKPOINT_TEMPLATE="{run_dir}/best.pt"
 TRAIN_COMMAND=""
+INIT_CHECKPOINT=""
+MAX_STEPS=12000
+TRAIN_BATCH_SIZE=2
+GRAD_ACCUM_STEPS=1
+TRAIN_CROP_HEIGHT=512
+TRAIN_CROP_WIDTH=1024
+LR=0.0006
+WARMUP_STEPS=500
+SAVE_INTERVAL=500
+EVAL_INTERVAL=1000
+VAL_MAX_SAMPLES=500
 INPUT_HEIGHT=1024
 INPUT_WIDTH=2048
 EVAL_BATCH_SIZE=1
@@ -91,6 +112,17 @@ while [[ $# -gt 0 ]]; do
         --output-root) OUTPUT_ROOT="$2"; shift 2 ;;
         --checkpoint-template) CHECKPOINT_TEMPLATE="$2"; shift 2 ;;
         --train-command) TRAIN_COMMAND="$2"; shift 2 ;;
+        --init-checkpoint) INIT_CHECKPOINT="$2"; shift 2 ;;
+        --max-steps) MAX_STEPS="$2"; shift 2 ;;
+        --train-batch-size) TRAIN_BATCH_SIZE="$2"; shift 2 ;;
+        --grad-accum-steps) GRAD_ACCUM_STEPS="$2"; shift 2 ;;
+        --train-crop-height) TRAIN_CROP_HEIGHT="$2"; shift 2 ;;
+        --train-crop-width) TRAIN_CROP_WIDTH="$2"; shift 2 ;;
+        --lr) LR="$2"; shift 2 ;;
+        --warmup-steps) WARMUP_STEPS="$2"; shift 2 ;;
+        --save-interval) SAVE_INTERVAL="$2"; shift 2 ;;
+        --eval-interval) EVAL_INTERVAL="$2"; shift 2 ;;
+        --val-max-samples) VAL_MAX_SAMPLES="$2"; shift 2 ;;
         --input-height) INPUT_HEIGHT="$2"; shift 2 ;;
         --input-width) INPUT_WIDTH="$2"; shift 2 ;;
         --eval-batch-size) EVAL_BATCH_SIZE="$2"; shift 2 ;;
@@ -115,8 +147,8 @@ case "${DATASET}" in
     *) echo "Invalid --dataset: ${DATASET}" >&2; exit 2 ;;
 esac
 
-if [[ "${MODE}" == *train* && -z "${TRAIN_COMMAND}" ]]; then
-    echo "--train-command is required for ${MODE} mode" >&2
+if [[ "${MODE}" == *train* && -z "${TRAIN_DATA}" ]]; then
+    echo "--train-data is required for ${MODE} mode" >&2
     exit 2
 fi
 if [[ "${MODE}" == *evaluate* && -z "${EVAL_PATH}" ]]; then
@@ -147,6 +179,17 @@ export MHLA_EVAL_PATH="${EVAL_PATH}"
 export MHLA_CROP_SIZE="${CROP_SIZE}"
 export MHLA_CHECKPOINT_TEMPLATE="${CHECKPOINT_TEMPLATE}"
 export MHLA_TRAIN_COMMAND="${TRAIN_COMMAND}"
+export MHLA_INIT_CHECKPOINT="${INIT_CHECKPOINT}"
+export MHLA_MAX_STEPS="${MAX_STEPS}"
+export MHLA_TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE}"
+export MHLA_GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS}"
+export MHLA_TRAIN_CROP_HEIGHT="${TRAIN_CROP_HEIGHT}"
+export MHLA_TRAIN_CROP_WIDTH="${TRAIN_CROP_WIDTH}"
+export MHLA_LR="${LR}"
+export MHLA_WARMUP_STEPS="${WARMUP_STEPS}"
+export MHLA_SAVE_INTERVAL="${SAVE_INTERVAL}"
+export MHLA_EVAL_INTERVAL="${EVAL_INTERVAL}"
+export MHLA_VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES}"
 export MHLA_INPUT_HEIGHT="${INPUT_HEIGHT}"
 export MHLA_INPUT_WIDTH="${INPUT_WIDTH}"
 export MHLA_EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE}"

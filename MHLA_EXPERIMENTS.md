@@ -145,11 +145,30 @@ only its four new MHLA mixing matrices as missing.
 
 The official repository does not release a semantic-segmentation training
 script or its training configuration; it contains evaluation/demo code and
-pretrained checkpoints only. Consequently this branch does not fabricate a
-different trainer and call it the paper baseline. Connect the model factory
-above to the course-provided/original training harness and keep dataset,
-resolution, augmentations, loss, AdamW settings, cosine schedule, iterations,
-seed, and evaluation protocol identical across E0--E3.
+pretrained checkpoints only. This branch therefore supplies
+`applications/efficientvit_seg/train_efficientvit_seg_model.py`: a lightweight,
+documented comparison protocol, not a reconstruction of the paper's unreleased
+recipe. It uses matched random scale/crop/flip augmentation, cross-entropy,
+AdamW, warmup plus cosine decay, AMP, DDP, periodic mIoU, and resumable
+checkpoints for every E0--E3 run.
+
+Direct single-node example:
+
+```bash
+torchrun --standalone --nproc_per_node=8 \
+  applications/efficientvit_seg/train_efficientvit_seg_model.py \
+  --data-root /datasets/cityscapes \
+  --dataset cityscapes \
+  --model efficientvit-seg-b1-cityscapes \
+  --experiment e2 --mhla-num-groups 4 \
+  --output-dir runs/e2_m4 --max-steps 12000 --resume
+```
+
+Optionally pass one common `--init-checkpoint` to all variants. The trainer
+loads only name-and-shape-compatible tensors and records the result in
+`initialization_report.json`. Keep dataset, resolution, initialization policy,
+optimizer, schedule, iterations, effective global batch, seed, and evaluation
+protocol identical across E0--E3.
 
 For each variant, the only model arguments that should change are:
 

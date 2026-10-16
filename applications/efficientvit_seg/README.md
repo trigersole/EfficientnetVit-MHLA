@@ -107,6 +107,30 @@ Please run [eval_efficientvit_seg_model.py](eval_efficientvit_seg_model.py) to e
 
 Examples: [segmentation](../../assets/eval_efficientvit_seg_model.sh)
 
+## Lightweight E0--E3 training
+
+The official release does not include a segmentation trainer. This branch adds
+[train_efficientvit_seg_model.py](train_efficientvit_seg_model.py) as a common,
+compute-conscious protocol for comparing the original architecture (E0) with
+E1--E3. It is not claimed to reproduce the paper's unreleased recipe.
+
+```bash
+torchrun --standalone --nproc_per_node=8 \
+  applications/efficientvit_seg/train_efficientvit_seg_model.py \
+  --data-root /datasets/cityscapes \
+  --model efficientvit-seg-b1-cityscapes \
+  --experiment e0 \
+  --output-dir runs/e0 \
+  --max-steps 12000 \
+  --resume
+```
+
+Change only `--experiment` (and `--mhla-num-groups` for E2/E3) for controlled
+comparisons. Defaults use AMP, 512x1024 crops, batch 2 per GPU, and validation
+on at most 500 images. Outputs include `config.json`, JSONL metrics, `best.pt`
+for evaluation, and `last.pt` for resume. See the
+[SLURM guide](../../scripts/slurm/README.md) for the four-way 32-GPU launcher.
+
 ## Visualization
 
 Please run [demo_efficientvit_seg_model.py](demo_efficientvit_seg_model.py) to visualize the models.

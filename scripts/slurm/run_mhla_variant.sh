@@ -54,21 +54,46 @@ write_metadata() {
 }
 
 run_training() {
-    if [[ -z "${MHLA_TRAIN_COMMAND:-}" ]]; then
-        cat >&2 <<'EOF'
-Training was requested, but --train-command was not supplied.
-The upstream EfficientViT repository does not include a segmentation trainer.
-Pass your course/existing trainer command; it can read the exported variables:
-MHLA_EXPERIMENT, MHLA_NUM_GROUPS, MHLA_MODEL_NAME, MHLA_DATASET,
-MHLA_TRAIN_DATA, MHLA_EVAL_PATH, MHLA_RUN_DIR, MHLA_CHECKPOINT_PATH,
-and MHLA_GPUS_PER_EXPERIMENT.
-EOF
-        exit 2
+    echo "[${RUN_NAME}] starting training"
+    if [[ -n "${MHLA_TRAIN_COMMAND:-}" ]]; then
+        # shellcheck disable=SC2016
+        bash -lc "${MHLA_TRAIN_COMMAND}" 2>&1 | tee "${RUN_DIR}/train.log"
+        return
     fi
 
-    echo "[${RUN_NAME}] starting training"
-    # shellcheck disable=SC2016
-    bash -lc "${MHLA_TRAIN_COMMAND}" 2>&1 | tee "${RUN_DIR}/train.log"
+    local -a init_args=()
+    if [[ -n "${MHLA_INIT_CHECKPOINT:-}" ]]; then
+        init_args=(--init-checkpoint "${MHLA_INIT_CHECKPOINT}")
+    fi
+    torchrun --standalone --nproc_per_node="${MHLA_GPUS_PER_EXPERIMENT}" \
+        applications/efficientvit_seg/train_efficientvit_seg_model.py \
+        --data-root "${MHLA_TRAIN_DATA}" \
+        --dataset "${MHLA_DATASET}" \
+        --model "${MHLA_MODEL_NAME}" \
+        --experiment "${EXPERIMENT}" \
+        --mhla-num-groups "${MHLA_GROUPS}" \
+        --output-dir "${RUN_DIR}" \
+        --max-steps "${MHLA_MAX_STEPS}" \
+        --batch-size "${MHLA_TRAIN_BATCH_SIZE}" \
+        --grad-accum-steps "${MHLA_GRAD_ACCUM_STEPS}" \
+        --workers "${MHLA_WORKERS}" \
+        --crop-height "${MHLA_TRAIN_CROP_HEIGHT}" \
+        --crop-width "${MHLA_TRAIN_CROP_WIDTH}" \
+        --lr "${MHLA_LR}" \
+        --warmup-steps "${MHLA_WARMUP_STEPS}" \
+        --save-interval "${MHLA_SAVE_INTERVAL}" \
+        --eval-interval "${MHLA_EVAL_INTERVAL}" \
+        --val-max-samples "${MHLA_VAL_MAX_SAMPLES}" \
+        --seed "${MHLA_SEED}" \
+        --resume \
+        "${init_args[@]}" \
+        2>&1 | tee "${RUN_DIR}/train.log"
+
+    local built_in_checkpoint="${RUN_DIR}/best.pt"
+    if [[ "${CHECKPOINT_PATH}" != "${built_in_checkpoint}" ]]; then
+        mkdir -p "$(dirname "${CHECKPOINT_PATH}")"
+        cp "${built_in_checkpoint}" "${CHECKPOINT_PATH}"
+    fi
 }
 
 run_evaluation() {
