@@ -162,3 +162,22 @@ with `--checkpoint-template`). Because jobs are limited to six hours, its
 For final scientific comparisons, keep every non-attention training option
 identical across E0--E3: data, augmentations, loss, initialization policy,
 optimizer, schedule, iterations, effective global batch size, and seed.
+
+## TC2 (1 GPU per account, 6-hour jobs)
+
+TC2's `normal` QoS allows 1 GPU, 10 CPUs, 30 GB and 6 hours per job, so the
+32-GPU launcher above does not fit. Use these instead; every setting lives in
+`scripts/protocol.env`, which all arms share. Do not edit it after real runs start.
+
+```bash
+# once per account: env in ~/envs/effvit, weights in ~/ckpt, data in ~/datasets/cityscapes
+python scripts/tc2/check_cityscapes.py ~/datasets/cityscapes     # must print DATASET_OK
+
+sbatch scripts/slurm/tc2_r0_eval.sbatch                            # R0: official weights, expect 80.2-80.8
+bash scripts/slurm/tc2_submit_chain.sh e0 4                        # 4 chained 6-hour segments for E0
+```
+
+Each segment resumes from `last.pt`; SLURM sends USR1 five minutes before the
+limit, and the trainer then saves a checkpoint. When `final.pt` (last step) exists, the
+next segment runs the official evaluator on all 500 validation images at
+1024x2048 and writes `eval_full.txt`. Report `final.pt`, not `best.pt`.

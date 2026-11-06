@@ -19,3 +19,8 @@ assets/export_models/
 applications/efficientvit_gazesam/models/pytorch
 applications/efficientvit_gazesam/models/onnx
 applications/efficientvit_gazesam/models/tensorrt
+
+# local data / scratch
+archive.zip
+Screenshot*.png
+logs/

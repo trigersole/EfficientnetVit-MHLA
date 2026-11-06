@@ -308,9 +308,34 @@ def extract_state_dict(checkpoint: dict) -> dict[str, torch.Tensor]:
     return {key.removeprefix("module."): value for key, value in checkpoint.items() if torch.is_tensor(value)}
 
 
-def load_compatible_weights(model: torch.nn.Module, checkpoint_path: str) -> dict:
+def _sliced_projection(key: str, source: torch.Tensor, target: torch.Tensor) -> Optional[torch.Tensor]:
+    """Return the base-head slice of a multi-scale LiteMLA projection, if applicable.
+
+    Removing the multi-scale branches narrows `proj.conv.weight` from
+    [C_out, A*D*(1+S), 1, 1] to [C_out, A*D, 1, 1]. LiteMLA concatenates
+    [base heads, aggregated heads], so the first A*D input channels belong
+    to the base heads that the no-multi-scale arms keep.
+    """
+    if not key.endswith("proj.conv.weight") or source.ndim != 4 or target.ndim != 4:
+        return None
+    if source.shape[0] != target.shape[0] or source.shape[2:] != target.shape[2:]:
+        return None
+    if target.shape[1] >= source.shape[1] or source.shape[1] % target.shape[1] != 0:
+        return None
+    return source[:, : target.shape[1]].clone()
+
+
+def load_compatible_weights(
+    model: torch.nn.Module,
+    checkpoint_path: str,
+    scope: str = "all",
+    inherit_sliced_proj: bool = False,
+) -> dict:
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state_dict = extract_state_dict(checkpoint)
+    if scope == "backbone":
+        # A classification checkpoint's head must never leak into the segmentation head.
+        state_dict = {key: value for key, value in state_dict.items() if key.startswith("backbone.")}
     model_state = model.state_dict()
     compatible = {
         key: value for key, value in state_dict.items() if key in model_state and model_state[key].shape == value.shape
@@ -318,12 +343,22 @@ def load_compatible_weights(model: torch.nn.Module, checkpoint_path: str) -> dic
     shape_mismatch = sorted(
         key for key, value in state_dict.items() if key in model_state and model_state[key].shape != value.shape
     )
+    sliced = []
+    if inherit_sliced_proj:
+        for key in shape_mismatch:
+            value = _sliced_projection(key, state_dict[key], model_state[key])
+            if value is not None:
+                compatible[key] = value
+                sliced.append(key)
+        shape_mismatch = [key for key in shape_mismatch if key not in sliced]
     if not compatible:
         raise ValueError("Initialization loaded zero tensors; check checkpoint architecture and key prefixes")
     incompatible = model.load_state_dict(compatible, strict=False)
     return {
         "checkpoint": str(Path(checkpoint_path).resolve()),
+        "scope": scope,
         "loaded": len(compatible),
+        "sliced": sorted(sliced),
         "missing": sorted(incompatible.missing_keys),
         "unexpected": sorted(key for key in state_dict if key not in model_state),
         "shape_mismatch": shape_mismatch,
@@ -332,15 +367,25 @@ def load_compatible_weights(model: torch.nn.Module, checkpoint_path: str) -> dic
 
 
 def build_optimizer(
-    model: torch.nn.Module, lr: float, weight_decay: float, backbone_lr_multiplier: float = 1.0
+    model: torch.nn.Module,
+    lr: float,
+    weight_decay: float,
+    backbone_lr_multiplier: float = 1.0,
+    fresh_parameter_names: Optional[set[str]] = None,
 ) -> torch.optim.Optimizer:
+    """AdamW groups. Backbone tensors that were NOT initialized from the checkpoint
+    (e.g. MHLA mixing weights, re-initialized projections) keep the full LR, so the
+    backbone multiplier never slows down only the new parts of an experiment arm."""
+    fresh_parameter_names = fresh_parameter_names or set()
     groups = {}
     for name, parameter in model.named_parameters():
         if not parameter.requires_grad:
             continue
         no_decay = parameter.ndim <= 1 or name.endswith(".bias") or "norm" in name.lower()
-        is_backbone = name.removeprefix("module.").startswith("backbone.")
-        multiplier = backbone_lr_multiplier if is_backbone else 1.0
+        clean_name = name.removeprefix("module.")
+        is_backbone = clean_name.startswith("backbone.")
+        is_fresh = clean_name in fresh_parameter_names
+        multiplier = backbone_lr_multiplier if is_backbone and not is_fresh else 1.0
         key = (multiplier, 0.0 if no_decay else weight_decay)
         groups.setdefault(key, []).append(parameter)
     return torch.optim.AdamW(
@@ -487,6 +532,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mhla-num-groups", type=int, default=4)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--init-checkpoint", default=None)
+    parser.add_argument(
+        "--init-scope", choices=["all", "backbone"], default="all",
+        help="'backbone' loads only backbone.* tensors (use for an ImageNet classification checkpoint)",
+    )
+    parser.add_argument(
+        "--inherit-sliced-proj", action=argparse.BooleanOptionalAction, default=False,
+        help="No-multi-scale arms copy the base-head slice of the original attention projection",
+    )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--max-steps", type=int, default=12000)
     parser.add_argument("--batch-size", type=int, default=2, help="Per-process batch size")
@@ -585,7 +638,8 @@ def main() -> None:
             defaults = {"recipe": "legacy", "photometric": False, "cat_max_ratio": 1.0,
                         "crop_retries": 10, "native_val_labels": False, "val_height": None,
                         "val_width": None, "backbone_lr_multiplier": 1.0, "allow_scratch": False,
-                        "mhla_weight_constraint": "none", "mhla_eps": 1.0e-15, "mhla_qk_eps": 0.0}
+                        "mhla_weight_constraint": "none", "mhla_eps": 1.0e-15, "mhla_qk_eps": 0.0,
+                        "init_scope": "all", "inherit_sliced_proj": False}
             defaults["attention_diagnostics"] = False
             changed = [key for key, value in vars(args).items()
                        if key not in ignored and old.get(key, defaults.get(key)) != value]
@@ -661,9 +715,18 @@ def main() -> None:
     )
     initialization_report = None
     if args.init_checkpoint:
-        initialization_report = load_compatible_weights(model, args.init_checkpoint)
+        initialization_report = load_compatible_weights(
+            model, args.init_checkpoint, scope=args.init_scope, inherit_sliced_proj=args.inherit_sliced_proj
+        )
         if args.recipe == "cityscapes_v2" and initialization_report["loaded_backbone_tensors"] == 0:
             raise ValueError("cityscapes_v2 initialization loaded no backbone tensors; check checkpoint key names")
+    fresh_parameter_names = set()
+    if initialization_report is not None:
+        parameter_names = {name for name, _ in model.named_parameters()}
+        fresh_parameter_names = parameter_names & set(initialization_report["missing"])
+        initialization_report["full_lr_fresh_backbone_parameters"] = sorted(
+            name for name in fresh_parameter_names if name.startswith("backbone.")
+        )
     for module in model.modules():
         if isinstance(module, MultiHeadLinearAttention):
             module.eps = args.mhla_eps
@@ -674,7 +737,9 @@ def main() -> None:
     if world_size > 1:
         model = DistributedDataParallel(model, device_ids=[local_rank] if device.type == "cuda" else None)
 
-    optimizer = build_optimizer(model, args.lr, args.weight_decay, args.backbone_lr_multiplier)
+    optimizer = build_optimizer(
+        model, args.lr, args.weight_decay, args.backbone_lr_multiplier, fresh_parameter_names
+    )
     scaler = torch.amp.GradScaler(device.type, enabled=args.amp and device.type == "cuda")
     start_step, epoch, best_miou = 0, 0, -1.0
     last_checkpoint = output_dir / "last.pt"
@@ -830,6 +895,9 @@ def main() -> None:
                 if miou > best_miou:
                     best_miou = miou
                     save_model_weights(output_dir / "best.pt", model)
+        if completed_step == args.max_steps and is_master:
+            # The reported checkpoint: last step, not selected on validation.
+            save_model_weights(output_dir / "final.pt", model)
 
         should_save = completed_step % args.save_interval == 0 or completed_step == args.max_steps
         stop_tensor = torch.tensor(int(STOP_REQUESTED), device=device)

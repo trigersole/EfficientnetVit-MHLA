@@ -18,6 +18,7 @@ from applications.efficientvit_seg.train_efficientvit_seg_model import (
     learning_rate_at_step,
     save_model_weights,
     build_optimizer,
+    load_compatible_weights,
     parse_args,
     evaluate,
     DistributedEvalSampler,
@@ -123,6 +124,44 @@ class SegmentationTrainerTest(unittest.TestCase):
                 is_backbone = parameter is model.backbone.weight or parameter is model.backbone.bias
                 self.assertAlmostEqual(group["lr"], 1e-4 if is_backbone else 1e-3)
                 self.assertEqual(group["weight_decay"], 0 if parameter.ndim == 1 else 0.01)
+
+    def test_fresh_backbone_parameters_keep_full_lr(self):
+        model = torch.nn.Module()
+        model.backbone = torch.nn.Module()
+        model.backbone.old = torch.nn.Conv2d(3, 2, 1)
+        model.backbone.new = torch.nn.Conv2d(2, 2, 1)
+        model.head = torch.nn.Conv2d(2, 2, 1)
+        fresh = {"backbone.new.weight", "backbone.new.bias"}
+        optimizer = build_optimizer(model, 1e-3, 0.01, 0.1, fresh)
+        slow = {id(model.backbone.old.weight), id(model.backbone.old.bias)}
+        for group in optimizer.param_groups:
+            for parameter in group["params"]:
+                self.assertAlmostEqual(group["lr"], 1e-4 if id(parameter) in slow else 1e-3)
+
+    def test_backbone_scope_and_sliced_projection_init(self):
+        source = {
+            "backbone.blk.proj.conv.weight": torch.arange(2 * 8, dtype=torch.float32).reshape(2, 8, 1, 1),
+            "backbone.blk.qkv.conv.weight": torch.ones(6, 2, 1, 1),
+            "head.op_list.0.weight": torch.ones(2, 2, 1, 1),
+        }
+        model = torch.nn.Module()
+        model.backbone = torch.nn.Module()
+        model.backbone.blk = torch.nn.Module()
+        model.backbone.blk.proj = torch.nn.Module()
+        model.backbone.blk.proj.conv = torch.nn.Conv2d(4, 2, 1, bias=False)
+        model.backbone.blk.qkv = torch.nn.Module()
+        model.backbone.blk.qkv.conv = torch.nn.Conv2d(2, 6, 1, bias=False)
+        model.head = torch.nn.Module()
+        model.head.op_list = torch.nn.ModuleList([torch.nn.Conv2d(2, 2, 1, bias=False)])
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as temporary_directory:
+            path = Path(temporary_directory) / "init.pt"
+            torch.save({"state_dict": source}, path)
+            report = load_compatible_weights(model, str(path), scope="backbone", inherit_sliced_proj=True)
+        self.assertEqual(report["sliced"], ["backbone.blk.proj.conv.weight"])
+        self.assertEqual(report["shape_mismatch"], [])
+        self.assertIn("head.op_list.0.weight", report["missing"])
+        torch.testing.assert_close(model.backbone.blk.proj.conv.weight, source["backbone.blk.proj.conv.weight"][:, :4])
+        self.assertFalse(torch.equal(model.head.op_list[0].weight, torch.ones(2, 2, 1, 1)))
 
     def test_best_weight_file_is_evaluator_compatible(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as temporary_directory:
